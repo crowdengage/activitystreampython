@@ -1,6 +1,6 @@
 [tool.poetry]
 name = "activitystreampython"
-version = "0.1.6"
+version = "0.1.9"
 description = "A convenience library to make retrieving data from the Activity Stream Data Service API easier"
 authors = ["Hugh Topping <hugh@crowdengage.com>"]
 license = "Apache-2.0"
