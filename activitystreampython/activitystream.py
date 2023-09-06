@@ -1,8 +1,18 @@
 from datetime import datetime, timedelta, timezone
 import logging
 import requests
+import json
+import base64
 from urllib.parse import quote_plus
 import time
+
+ACTIVITYSTREAM_DATA_SERVICE_SCOPE = (
+    "https://activitystream.com/security/data-service-scope"
+)
+ACTIVITYSTREAM_MARKETING_SCOPE = (
+    "https://activitystream.com/security/data-service-scope-email"
+)
+CREDENTIAL_ERROR = "Credential Error: Please contact Activity Stream developer support"
 
 
 class ActivityStreamAPI(object):
@@ -40,6 +50,35 @@ class ActivityStreamAPI(object):
 
         return self._current_token
 
+    @property
+    def _ticketing_token(self):
+        token = self._token
+
+        claims = json.loads(base64.b64decode(token.split(".")[1] + "=="))
+        tenant = claims.get(ACTIVITYSTREAM_DATA_SERVICE_SCOPE, {}).get(
+            "as_tenant", None
+        )
+
+        if tenant and tenant != self.tenant:
+            raise RuntimeError(CREDENTIAL_ERROR)
+
+        return token
+
+    @property
+    def _marketing_token(self):
+        token = self._token
+
+        claims = json.loads(base64.b64decode(token.split(".")[1] + "=="))
+        tenants = [
+            environment.split(":", 2)[0]
+            for environment in claims.get(ACTIVITYSTREAM_MARKETING_SCOPE, {}).get(
+                "as_tenants", []
+            )
+        ]
+
+        if self.tenant not in tenants:
+            raise RuntimeError(CREDENTIAL_ERROR)
+
     def ticketing_data(
         self,
         data_type,
@@ -72,7 +111,7 @@ class ActivityStreamAPI(object):
                 chunk_end_datetime=quote_plus(chunk_end_datetime.isoformat()),
             )
 
-            yield from self._retrieve_and_yield_data(path)
+            yield from self._retrieve_and_yield_data(path, self._ticketing_token)
 
     def marketing_data(self, start_datetime):
         start_date = start_datetime.date()
@@ -82,7 +121,7 @@ class ActivityStreamAPI(object):
             start_date=quote_plus(start_date.isoformat()),
         )
 
-        yield from self._retrieve_and_yield_data(path)
+        yield from self._retrieve_and_yield_data(path, self._marketing_token)
 
     def _chunk_date_range(self, start_datetime, end_datetime, chunk_size):
         if type(chunk_size) != timedelta or chunk_size < timedelta(seconds=0):
@@ -101,7 +140,7 @@ class ActivityStreamAPI(object):
             yield [chunk_start_datetime, chunk_end_datetime]
             chunk_start_datetime = chunk_end_datetime
 
-    def _retrieve_and_yield_data(self, path):
+    def _retrieve_and_yield_data(self, path, token):
         error_count = 0
         page = 0
         while True:
@@ -109,7 +148,7 @@ class ActivityStreamAPI(object):
                 url = f"{self.base_url}{path}&page={page}"
                 response = requests.get(
                     url,
-                    headers={"Authorization": f"Bearer {self._token}"},
+                    headers={"Authorization": f"Bearer {token}"},
                 )
                 response.raise_for_status()
                 page_data = response.json()
