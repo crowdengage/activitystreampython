@@ -79,6 +79,8 @@ class ActivityStreamAPI(object):
         if self.tenant not in tenants:
             raise RuntimeError(CREDENTIAL_ERROR)
 
+        return token
+
     def ticketing_data(
         self,
         data_type,
